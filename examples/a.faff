@@ -1,0 +1,9 @@
+// hello world this is a faff file
+// just realised I cant skip newlines if i care about spacing
+// and tabs will be a pain
+
+int main():
+    print("This is stupid!")
+
+    // some bar
+    foo(a * b)

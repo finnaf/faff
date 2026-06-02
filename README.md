@@ -7,3 +7,9 @@ Actually a "transpiler"...
 Just to have fun programming something silly.
 
 Probably into C, but add back all the features was the plan.
+
+Pythonic C? but want it to be typed...
+Do you ever wish C cared about whitespace?? I do!
+
+int main():
+    print("Hello world")

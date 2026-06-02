@@ -1,11 +1,25 @@
 // Header file for input output functions
 #include <stdio.h>
+#include <stdlib.h>
+#include "lexer.h"
 
-// Main function: entry point for execution
-int main() {
+int main ()
+{
+    printf("Initing\n");
+    initLexer("examples/a.faff");
 
-    // Writing print statement to print hello world
-    printf("Hello World");
+    printf("Extracting tokens.\n");
+    Token tok = getNextToken();
 
-    return 0;
+    int i=0;
+
+    while (tok.tp != EOFile && tok.tp != ERR)
+    {
+        tok = getNextToken();
+        printf("%d:lexeme(%s), linenum(%d), error(%d), type(%d)\n", i, tok.lx, tok.ln, tok.ec, tok.tp);
+        i++;
+    }
+
+    printf("Done\n");
+        return EXIT_SUCCESS;
 }
