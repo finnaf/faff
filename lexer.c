@@ -55,14 +55,14 @@ static void clearIdentStack()
 
 // buffer management
 
-// returns 0 on success, else 1
+// returns 1 on success, else 0
 static int readFileChunk()
 {
     FILE* file = fopen(filename, "r");
     if (!file)
     {
         printf("Could not open file %s\n", filename);
-        return 1;
+        return 0;
     }
 
     memset(buf, 0, sizeof(buf));
@@ -73,7 +73,7 @@ static int readFileChunk()
     buf[num_bytes_read] = '\0';
     file_pos += num_bytes_read;
 
-    return 0;
+    return 1;
 }
 
 // return 1 on new chunk read, else 0
@@ -83,7 +83,7 @@ static int incrementPtr ()
 {
     if (b_ptr >= buf + BUF_SIZE - 2 && *b_ptr != '\0')
     {
-        if (readFileChunk())
+        if (!readFileChunk())
             return 0;
         
         b_ptr = buf;
@@ -127,7 +127,7 @@ int decrementPtr ()
     else
         file_pos -= (BUF_SIZE + num_bytes_read-1);
 
-    if (readFileChunk())
+    if (!readFileChunk())
         return 2;
 
     b_ptr = buf+(BUF_SIZE-2); // go to 1023rd char in buf
@@ -154,7 +154,7 @@ static bool isSymbol (char str)
 
 /*
 Skip the body of a block comment (after opening /* is consumed)
-Returns 1 on unexpected EOF, 0 on end found
+Returns 0 on unexpected EOF, 1 on end found
 */
 static int findMultiCommentEnd ()
 {
@@ -169,7 +169,7 @@ static int findMultiCommentEnd ()
             if (*b_ptr == '/')
             {
                 incrementPtr();
-                return 0;
+                return 1;
             }
 
             continue;
@@ -181,12 +181,12 @@ static int findMultiCommentEnd ()
     t.ec = EofInComment;
     t.tp = ERR;
     strcpy(t.lx, "Error: unexpected EOF in block comment");
-    return 1;
+    return 0;
 }
 
 // skips horizontal whitespace
 // newlines are not handeld
-// returns 0 on error
+// returns 0 on error, else 1
 static int eatWhitespace ()
 {
     while (1)
@@ -209,9 +209,9 @@ static int eatWhitespace ()
                 incrementPtr();
                 incrementPtr();
 
-                if (findMultiCommentEnd()) // found eof in comment
+                if (!findMultiCommentEnd()) // found eof in comment
                     return 0;
-                continue;
+                return 1;
 
             default: // is just a '/'
                 return 1;
@@ -222,24 +222,24 @@ static int eatWhitespace ()
 
 // token building
 
-// return 1 on error, else 0
+// return 0 on error, else 1
 static int buildToken ()
 {
     eatWhitespace();
     if (t.tp == ERR)
-        return 1;
+        return 0;
 
     if (*b_ptr == '\0')
     {
         t.lx[0] = '\0';
         t.tp = EOFile;
-        return 0;
+        return 1;
     }
 
     if (*b_ptr == '\n')
     {        
         t.tp = NONE;
-        return 0;
+        return 1;
     }
 
     int i = 0;
@@ -256,14 +256,14 @@ static int buildToken ()
                 t.tp = ERR;
                 t.ec = NewLineInStr;
                 strcpy(t.lx, "Error: newline in string literal");
-                return 1;
+                return 0;
             }
             if (*b_ptr == '\0')
             {
                 t.tp = ERR;
                 t.ec = EofInStr;
                 strcpy(t.lx, "Error: unexpected EOF in string literal");
-                return 1;
+                return 0;
             }
             if (i < (LEX_SIZE-2))
                 temp[i++] = *b_ptr;
@@ -276,7 +276,7 @@ static int buildToken ()
         strcpy(t.lx, temp);
         t.tp = STRING;
         
-        return 0;
+        return 1;
     }
 
 
@@ -297,7 +297,7 @@ static int buildToken ()
 
         t.tp = isKeyword(temp) ? KEYWORD : IDENTIFIER;
 
-        return 0;
+        return 1;
     }
 
     // ints
@@ -313,7 +313,7 @@ static int buildToken ()
         temp[i] = '\0';
         strcpy(t.lx, temp);
         t.tp = INT;
-        return 0;
+        return 1;
     }
 
     // symbols
@@ -324,20 +324,20 @@ static int buildToken ()
             strcpy(t.lx, "Error: illegal symbol in source file");
             t.tp = ERR;
             t.ec = IllegalSym;
-            return 1;
+            return 0;
         }
 
         t.tp = SYMBOL;
         t.lx[0] = *b_ptr;
         t.lx[1] = '\0';
         incrementPtr();
-        return 0;
+        return 1;
     }
 }
 
 // adds global token to tokens array
 // doubles memory if required
-// returns 1 on allocation fail, else 0
+// returns 0 on allocation fail, else !
 static int addToken (int* count, int* capacity)
 {
     if (*count >= *capacity)
@@ -345,7 +345,7 @@ static int addToken (int* count, int* capacity)
         int new_capacity = *capacity * 2;
         Token* tmp = realloc(tokens, (size_t)new_capacity * sizeof(Token));
         if (!tmp)
-            return 1;
+            return 0;
 
         tokens = tmp;
         *capacity = new_capacity;
@@ -354,11 +354,12 @@ static int addToken (int* count, int* capacity)
     tokens[*count] = t;
     (*count)++;
 
-    return 0;
+    return 1;
 }
 
 // measures indentation of the newline and emits INDENT/DEDENT tokens
 // after, t points at first non-whitespace character in the line
+// returns 0 on error, else 1
 static int eatIndent(int* count, int* capacity)
 {
     int spaces = 0, tabs = 0;
@@ -372,14 +373,14 @@ static int eatIndent(int* count, int* capacity)
 
     // blank line, EOF or comment only
     if (*b_ptr == '\n' || *b_ptr == '\0' || *b_ptr == '/')
-        return 0;
+        return 1;
 
     if (tabs > 0 && spaces > 0)
     {
         t.tp = ERR;
         t.ec = TabError;
         strcpy(t.lx, "Error: mixed indentation");
-        return 1;
+        return 0;
     }
 
     int indent_level = (tabs * TAB_WIDTH) + spaces;
@@ -391,7 +392,7 @@ static int eatIndent(int* count, int* capacity)
             t.tp = ERR;
             t.ec = TabError;
             strcpy(t.lx, "Error: max indentation level reached");
-            return 1;
+            return 0;
         }
 
         indent_stack[++stack_top] = indent_level;
@@ -399,8 +400,8 @@ static int eatIndent(int* count, int* capacity)
         t.tp = INDENT;
         t.ec = NoLexError;
         t.lx[0] = '\0';
-        if (addToken(count, capacity))
-            return 1;
+        if (!addToken(count, capacity))
+            return 0;
     }
     else if (indent_level < indent_stack[stack_top])
     {
@@ -412,7 +413,8 @@ static int eatIndent(int* count, int* capacity)
             t.tp = DEDENT;
             t.ec = NoLexError;
             t.lx[0] = '\0';
-            if (addToken(count, capacity)) return 1;
+            if (!addToken(count, capacity))
+                return 0;
         }
 
         if (indent_level != indent_stack[stack_top])
@@ -420,16 +422,16 @@ static int eatIndent(int* count, int* capacity)
             t.tp = ERR;
             t.ec = TabError;
             strcpy(t.lx, "Error: dedent does not match any outer indentation level");
-            return 1;
+            return 0;
         }
     }
 
     // same level
 
-    return 0;
+    return 1;
 }
 
-// returns 1 on error, else 0
+// returns 0 on error, else 1
 int loadTokens ()
 {
     t = getClearToken();
@@ -439,13 +441,13 @@ int loadTokens ()
 
     tokens = malloc(capacity * sizeof(Token));
     if (!tokens)
-        return 1;
+        return 0;
 
     // for a file that starts indented
-    if (eatIndent(&token_count, &capacity))
+    if (!eatIndent(&token_count, &capacity))
     {
         addToken(&token_count, &capacity);
-        return 1;
+        return 0;
     }
 
     while (t.tp != EOFile && t.tp != ERR)
@@ -464,23 +466,23 @@ int loadTokens ()
             if (*b_ptr == '\0')
                 break;
 
-            if (eatIndent(&token_count, &capacity))
+            if (!eatIndent(&token_count, &capacity))
             {
                 addToken(&token_count, &capacity);
-                return 1;
+                return 0;
             }
             continue;
         }
 
-        if (buildToken())
+        if (!buildToken())
         {
             addToken(&token_count, &capacity);
-            return 1;
+            return 0;
         }
 
         if (t.tp != NONE)
-            if (addToken(&token_count, &capacity))
-                return 1;
+            if (!addToken(&token_count, &capacity))
+                return 0;
     }
 
     // pop indent_stack and emit a DEDENT
@@ -492,11 +494,11 @@ int loadTokens ()
         t.ec = NoLexError;
         t.lx[0] = '\0';
 
-        if (addToken(&token_count, &capacity))
-            return 1;
+        if (!addToken(&token_count, &capacity))
+            return 0;
     }
 
-    return 0;
+    return 1;
 }
 
 
@@ -510,13 +512,13 @@ int initLexer (char* file_name)
     strncpy(filename, file_name, sizeof(filename)-1);
     filename[sizeof(filename)-1] = '\0';
 
-    if (readFileChunk())
+    if (!readFileChunk())
     {
         printf("Could not read initial file chunk\n");
         return 0;
     }
 
-    if (loadTokens())
+    if (!loadTokens())
     {
         printf("Could not load tokens\n");
         t_ptr = tokens;

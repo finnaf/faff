@@ -3,7 +3,7 @@
 
 #define LEX_SIZE 128
 #define KEYWORD_COUNT 12
-#define SYMBOL_COUNT 15
+#define SYMBOL_COUNT 14
 
 typedef enum {
     KEYWORD, // reserved words

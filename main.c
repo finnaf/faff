@@ -1,5 +1,6 @@
 // Header file for input output functions
 #include <stdio.h>
+#include <stdlib.h>
 #include "lexer.h"
 
 int main ()
@@ -25,5 +26,5 @@ int main ()
     }
 
     printf("Done\n");
-    return 0;
+    return EXIT_SUCCESS;
 }
