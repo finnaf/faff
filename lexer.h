@@ -3,7 +3,7 @@
 
 #define LEX_SIZE 128
 #define KEYWORD_COUNT 12
-#define SYMBOL_COUNT 14
+#define SYMBOL_COUNT 15
 
 static const char* KEYWORDS[KEYWORD_COUNT] = {
     "character", "integer", "floating-point", "double", "boolean",
@@ -11,7 +11,7 @@ static const char* KEYWORDS[KEYWORD_COUNT] = {
 };
 
 static const char SYMBOLS[SYMBOL_COUNT] = {
-    '(', ')', '[', ']', ',', 
+    '(', ')', '[', ']', ',', ':',
     '=', '.', '+', '-', '*', '/', '<', '>'
 };
 
@@ -22,16 +22,19 @@ typedef enum {
     SYMBOL,
     STRING,
     EOFile,
+    INDENT,
+    DEDENT,
     ERR,
     NONE
 } TokenType;
 
 typedef enum {
+    NoLexError,
     EofInComment,
     NewLineInStr,
     EofInStr,
     IllegalSym,
-    NoLexError
+    TabError
 } LexError;
 
 typedef struct {

@@ -6,45 +6,60 @@
 #include "lexer.h"
 
 #define BUF_SIZE 1024
+#define INDENT_STACK_SIZE 256
+#define TAB_WIDTH 4
 
-char buf[BUF_SIZE];
-char* b_ptr;
+static char buf[BUF_SIZE];
+static char* b_ptr;
 
-char filename[LEX_SIZE];
-unsigned long file_pos;
-size_t num_bytes_read;
+static char filename[LEX_SIZE];
+static unsigned long file_pos;
+static size_t num_bytes_read;
 
-Token t;
-Token* t_ptr;
-Token* tokens;
+static Token t;
+static Token* t_ptr;
+static Token* tokens;
 
+static int indent_stack[INDENT_STACK_SIZE];
+static int stack_top = 0;
 
-Token getClearToken ()
+// helpers
+
+static Token getClearToken ()
 {
     Token tok;
 
     tok.tp = NONE;
     strcpy(tok.lx, "");
     tok.ec = NoLexError;
-    tok.ln = -1;
+    tok.ln = 0; // 1-based (source is obvious)
 
     return tok;
 }
 
-// returns 0 on success
-int readFileChunk()
+static void clearIdentStack()
+{
+    stack_top = 0;
+    memset(indent_stack, 0, sizeof(indent_stack));
+}
+
+// buffer management
+
+// returns 0 on success, else 1
+static int readFileChunk()
 {
     FILE* file = fopen(filename, "r");
     if (!file)
     {
         printf("Could not open file %s\n", filename);
-        return 0;
+        return 1;
     }
 
     memset(buf, 0, sizeof(buf));
     fseek(file, file_pos, SEEK_SET);
-
     num_bytes_read = fread(buf, 1, BUF_SIZE-1, file);
+    fclose(file);
+
     buf[num_bytes_read] = '\0';
     file_pos += num_bytes_read;
 
@@ -53,11 +68,13 @@ int readFileChunk()
 
 // return 1 on new chunk read, else 0
 // does not increment safely
-int incrementPtr ()
+static int incrementPtr ()
 {
     if (b_ptr >= buf + BUF_SIZE - 2)
     {
-        readFileChunk();
+        if (readFileChunk())
+            return 0;
+        
         b_ptr = buf;
         return 1;
     }
@@ -93,7 +110,9 @@ int decrementPtr ()
     return 1;
 }
 
-bool isKeyword (char* str)
+// character class helpers
+
+static bool isKeyword (char* str)
 {
     for (int i = 0; i < KEYWORD_COUNT; i++)
         if (!strcmp(KEYWORDS[i], str)) // are identical
@@ -101,7 +120,7 @@ bool isKeyword (char* str)
     return false;
 }
 
-bool isSymbol (char str)
+static bool isSymbol (char str)
 {
     for (int i = 0; i < SYMBOL_COUNT; i++)
         if (SYMBOLS[i] == str)
@@ -109,113 +128,101 @@ bool isSymbol (char str)
     return false;
 }
 
-int isEOF ()
-{
-    if (*b_ptr == '\0')
-    {
-        t.ec = EofInComment;
-        strcpy(t.lx, "Error: unexpected EOF");
-        t.tp = ERR;
-        return 1;
-    }
-
-    return 0;
-}
-
 /*
-Find the end of *multiline comments* /like these/
-Returns 2 on EOF, 1 on end, else 0 & increments
+Skip the body of a block comment (after opening /* is consumed)
+Returns 2 on unexpected EOF, 1 on end, else 0 & increments
 */
-int findMultiCommentEnd ()
+static int findMultiCommentEnd ()
 {
-    if (isEOF())
-        return 2;
-    if (*b_ptr == '\n')
-        t.ln++;
-
-    // is a candidate for end
-    if (*b_ptr == '*')
+    while (*b_ptr != '\0')
     {
-        while (*b_ptr == '*')
+        if (*b_ptr == '\n')
+            t.ln++;
+
+        if (*b_ptr == '*')
         {
             incrementPtr();
             if (*b_ptr == '/')
+            {
+                incrementPtr();
                 return 1;
-        }
-    }
-    else
-        incrementPtr(); // regular comment
-    
-    return 0;
-}
+            }
 
-// skips all comments and newlines
-int skipComments ()
-{
-    while (*b_ptr != '\0' && *b_ptr == '\n')
-    {
-        t.ln++;
+            continue;
+        }
+
         incrementPtr();
     }
 
-    if (*b_ptr == '/')
+    t.ec = EofInComment;
+    t.tp = ERR;
+    strcpy(t.lx, "Error: unexpected EOF in block comment");
+    return 2;
+}
+
+// skips horizontal whitespace
+// newlines are not handeld
+// returns first character after whitespace
+static int eatWhitespace ()
+{
+    while (1)
     {
+        while (*b_ptr == ' ' || *b_ptr == '\t')
+            incrementPtr();
+
+        if (*b_ptr != '/')
+            return (unsigned char)*b_ptr;
+
         incrementPtr();
 
         switch (*b_ptr)
         {
-            // handle basic comment
-            case '/':
+            case '/': // single-line comment
                 while (*b_ptr != '\0' && *b_ptr != '\n')
-                {
                     incrementPtr();
-                    if (*b_ptr == '\n')
-                        t.ln++;
-                }
-                break;
-
-            /* handle */ /***** and this */
-            case '*':
-            {
-                int flag = 0;
-                while (flag == 0)
+                return (unsigned char)*b_ptr;
+            
+            case '*': // block comment
+                incrementPtr();
                 {
-                    flag = findMultiCommentEnd();
+                    int r;
+                    do
+                    {
+                        r = findMultiCommentEnd();
+                    }
+                    while (r == 0);
 
-                    if (flag) // positive flag: error or end
-                        return *b_ptr;
+                    if (r == 2) return 0;
                 }
-                break;
-            }
+                continue;
 
-            // is just an operator /
-            default:
+            default: // is just a '/'
                 decrementPtr();
-                return *b_ptr;
-
+                return (unsigned char)*b_ptr;
+                
         }
-
-        incrementPtr();
-
-        if (*b_ptr == '\n' || *b_ptr == '/')
-            return skipComments();
     }
-
-    return *b_ptr;
 }
 
+// token building
+
 // return 1 on error, else 0
-int buildToken ()
+static int buildToken ()
 {
-    int c = skipComments();
+    int c = eatWhitespace();
+    if (t.tp == ERR)
+        return 1;
 
     if (*b_ptr == '\0')
     {
-        if (t.ec == EofInComment)
-            return 1;
-        
         t.lx[0] = '\0';
         t.tp = EOFile;
+        return 0;
+    }
+
+    if (*b_ptr == '\n')
+    {        
+        t.tp = NONE;
         return 0;
     }
 
@@ -232,14 +239,14 @@ int buildToken ()
             {
                 t.tp = ERR;
                 t.ec = NewLineInStr;
-                strcpy(t.lx, "Error: newline in string");
+                strcpy(t.lx, "Error: newline in string literal");
                 return 1;
             }
             if (*b_ptr == '\0')
             {
                 t.tp = ERR;
                 t.ec = EofInStr;
-                strcpy(t.lx, "Error: unexpected eof in string");
+                strcpy(t.lx, "Error: unexpected EOF in string literal");
                 return 1;
             }
             if (i < (LEX_SIZE-2))
@@ -247,19 +254,22 @@ int buildToken ()
             incrementPtr(); 
         }
 
-        incrementPtr(); // skip final "
+        incrementPtr(); // eat closing "
 
-        t.tp = STRING;
         temp[i] = '\0';
         strcpy(t.lx, temp);
+        t.tp = STRING;
+        
         return 0;
     }
 
 
     // keywords and identifiers
-    if (isalpha(*b_ptr) || *b_ptr == '_')
+    if (isalpha((unsigned char)*b_ptr) || *b_ptr == '_')
     {
-        while (isalpha(*b_ptr) || isdigit(*b_ptr) || *b_ptr == '_')
+        while (isalpha((unsigned char)*b_ptr) || 
+               isdigit((unsigned char)*b_ptr) ||
+               *b_ptr == '_')
         {
             if (i < (LEX_SIZE-2))
                 temp[i++] = *b_ptr;
@@ -269,17 +279,15 @@ int buildToken ()
         temp[i] = '\0';
         strcpy(t.lx, temp);
 
-        if (isKeyword(temp))
-            t.tp = KEYWORD;
-        else
-            t.tp = IDENTIFIER;
+        t.tp = isKeyword(temp) ? KEYWORD : IDENTIFIER;
+
         return 0;
     }
 
     // ints
-    else if (isdigit(*b_ptr))
+    if (isdigit((unsigned char)*b_ptr))
     {
-        while(isdigit(*b_ptr))
+        while(isdigit((unsigned char)*b_ptr))
         {
             if (i < (LEX_SIZE-2))
                 temp[i++] = *b_ptr;
@@ -313,16 +321,19 @@ int buildToken ()
 
 // adds global token to tokens array
 // doubles memory if required
-int addToken (int* count, int* capacity)
+// returns 1 on allocation fail, else 0
+static int addToken (int* count, int* capacity)
 {
     if (*count >= *capacity)
     {
         *capacity *= 2;
-        Token* tmp = realloc(tokens, *capacity * sizeof(Token));
-        if (tmp == NULL)
+        int new_capacity = *capacity * 2;
+        Token* tmp = realloc(tokens, (size_t)new_capacity * sizeof(Token));
+        if (!tmp)
             return 1;
-        
+
         tokens = tmp;
+        *capacity = new_capacity;
     }
 
     tokens[*count] = t;
@@ -331,10 +342,83 @@ int addToken (int* count, int* capacity)
     return 0;
 }
 
+// measures indentation of the newline and emits INDENT/DEDENT tokens
+// after, t points at first non-whitespace character in the line
+static int eatIndent(int* count, int* capacity)
+{
+    int spaces = 0, tabs = 0;
+
+    while (*b_ptr == ' ' || *b_ptr == '\t')
+    {
+        if (*b_ptr == '\t') tabs++;
+        else                spaces++;
+        incrementPtr();
+    }
+
+    // blank line, EOF or comment only
+    if (*b_ptr == '\n' || *b_ptr == '\0' || *b_ptr == '/')
+        return 0;
+
+    if (tabs > 0 && spaces > 0)
+    {
+        t.tp = ERR;
+        t.ec = TabError;
+        strcpy(t.lx, "Error: mixed indentation");
+        return 1;
+    }
+
+    int indent_level = (tabs * TAB_WIDTH) + spaces;
+    
+    if (indent_level > indent_stack[stack_top])
+    {
+        if (stack_top >= INDENT_STACK_SIZE - 1)
+        {
+            t.tp = ERR;
+            t.ec = TabError;
+            strcpy(t.lx, "Error: max indentation level reached");
+            return 1;
+        }
+
+        indent_stack[++stack_top] = indent_level;
+
+        t.tp = INDENT;
+        t.ec = NoLexError;
+        t.lx[0] = '\0';
+        if (addToken(count, capacity))
+            return 1;
+    }
+    else if (indent_level < indent_stack[stack_top])
+    {
+        // pop stack until match
+        while (stack_top > 0 && indent_level < indent_stack[stack_top])
+        {
+            stack_top--;
+
+            t.tp = DEDENT;
+            t.ec = NoLexError;
+            t.lx[0] = '\0';
+            if (addToken(count, capacity)) return 1;
+        }
+
+        if (indent_level != indent_stack[stack_top])
+        {
+            t.tp = ERR;
+            t.ec = TabError;
+            strcpy(t.lx, "Error: dedent does not match any outer indentation level");
+            return 1;
+        }
+    }
+
+    // same level
+
+    return 0;
+}
+
 // returns 1 on error, else 0
 int loadTokens ()
 {
     t = getClearToken();
+    t.ln = 1;
     int token_count = 0;
     int capacity = 64;
 
@@ -342,14 +426,57 @@ int loadTokens ()
     if (!tokens)
         return 1;
 
+    // for a file that starts indented
+    if (eatIndent(&token_count, &capacity))
+    {
+        addToken(&token_count, &capacity);
+        return 1;
+    }
+
     while (t.tp != EOFile && t.tp != ERR)
     {
+        if (*b_ptr == '\n')
+        {
+            t.ln++;
+            incrementPtr();
+
+            while (*b_ptr == '\n')
+            {
+                t.ln++;
+                incrementPtr();
+            }
+
+            if (*b_ptr == '\0')
+                break;
+
+            if (eatIndent(&token_count, &capacity))
+            {
+                addToken(&token_count, &capacity);
+                return 1;
+            }
+            continue;
+        }
+
         if (buildToken())
         {
-            printf("(%c) %s\n", *b_ptr, t.lx);
             addToken(&token_count, &capacity);
             return 1;
         }
+
+        if (t.tp != NONE)
+            if (addToken(&token_count, &capacity))
+                return 1;
+    }
+
+    // pop indent_stack and emit a DEDENT
+    while (stack_top > 0)
+    {
+        stack_top--;
+
+        t.tp = DEDENT;
+        t.ec = NoLexError;
+        t.lx[0] = '\0';
+
         if (addToken(&token_count, &capacity))
             return 1;
     }
@@ -360,6 +487,8 @@ int loadTokens ()
 
 int initLexer (char* file_name)
 {
+    clearIdentStack();
+
     file_pos = 0;
     b_ptr = buf;
 
@@ -381,15 +510,6 @@ int initLexer (char* file_name)
 
     t_ptr = tokens;
     return 1;
-}
-
-// delete if not needed
-Token getEndToken ()
-{
-    Token tok = getClearToken();
-    tok.tp = EOFile;
-
-    return tok;
 }
 
 Token getNextToken ()
@@ -417,4 +537,3 @@ int stopLexer ()
     t_ptr = NULL;
     return 0;
 }
-
