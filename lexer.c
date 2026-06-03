@@ -5,6 +5,16 @@
 #include <ctype.h>
 #include "lexer.h"
 
+const char* KEYWORDS[KEYWORD_COUNT] = {
+    "character", "integer", "floating-point", "double", "boolean",
+    "void", "if", "else", "while", "return", "true", "false"
+};
+
+const char SYMBOLS[SYMBOL_COUNT] = {
+    '(', ')', '[', ']', ',', ':',
+    '=', '.', '+', '-', '*', '/', '<', '>'
+};
+
 #define BUF_SIZE 1024
 #define INDENT_STACK_SIZE 256
 #define TAB_WIDTH 4
@@ -32,7 +42,7 @@ static Token getClearToken ()
     tok.tp = NONE;
     strcpy(tok.lx, "");
     tok.ec = NoLexError;
-    tok.ln = 0; // 1-based (source is obvious)
+    tok.ln = 0; // 1-based (so source is obvious)
 
     return tok;
 }
@@ -68,9 +78,10 @@ static int readFileChunk()
 
 // return 1 on new chunk read, else 0
 // does not increment safely
+// TODO ISSUE 4
 static int incrementPtr ()
 {
-    if (b_ptr >= buf + BUF_SIZE - 2)
+    if (b_ptr >= buf + BUF_SIZE - 2 && *b_ptr != '\0')
     {
         if (readFileChunk())
             return 0;
@@ -83,8 +94,21 @@ static int incrementPtr ()
     return 0;
 }
 
+static char peekPtr ()
+{
+    if (b_ptr >= buf + BUF_SIZE - 2 && *b_ptr != '\0')
+    {
+        // its in the next chunk... TODO reading from that
+        printf("Internal logic error (outside buf)\n");
+        return '\0';
+    }
+
+    return buf[*(b_ptr+1)];
+}
+
 // only called when can to go back to a previous full buffer, or doesnt need to
 // return 1 on / needing return, 2 on read error, else 0
+// this is dangerous, change this!!!
 int decrementPtr ()
 {
     if (b_ptr > buf)
@@ -103,7 +127,7 @@ int decrementPtr ()
     else
         file_pos -= (BUF_SIZE + num_bytes_read-1);
 
-    if (!readFileChunk())
+    if (readFileChunk())
         return 2;
 
     b_ptr = buf+(BUF_SIZE-2); // go to 1023rd char in buf
@@ -130,7 +154,7 @@ static bool isSymbol (char str)
 
 /*
 Skip the body of a block comment (after opening /* is consumed)
-Returns 2 on unexpected EOF, 1 on end, else 0 & increments
+Returns 1 on unexpected EOF, 0 on end found
 */
 static int findMultiCommentEnd ()
 {
@@ -145,7 +169,7 @@ static int findMultiCommentEnd ()
             if (*b_ptr == '/')
             {
                 incrementPtr();
-                return 1;
+                return 0;
             }
 
             continue;
@@ -157,12 +181,12 @@ static int findMultiCommentEnd ()
     t.ec = EofInComment;
     t.tp = ERR;
     strcpy(t.lx, "Error: unexpected EOF in block comment");
-    return 2;
+    return 1;
 }
 
 // skips horizontal whitespace
 // newlines are not handeld
-// returns first character after whitespace
+// returns 0 on error
 static int eatWhitespace ()
 {
     while (1)
@@ -171,34 +195,26 @@ static int eatWhitespace ()
             incrementPtr();
 
         if (*b_ptr != '/')
-            return (unsigned char)*b_ptr;
+            return 1;
 
-        incrementPtr();
-
-        switch (*b_ptr)
+        char next = peekPtr();
+        switch (next)
         {
             case '/': // single-line comment
                 while (*b_ptr != '\0' && *b_ptr != '\n')
                     incrementPtr();
-                return (unsigned char)*b_ptr;
+                return 1;
             
             case '*': // block comment
                 incrementPtr();
-                {
-                    int r;
-                    do
-                    {
-                        r = findMultiCommentEnd();
-                    }
-                    while (r == 0);
+                incrementPtr();
 
-                    if (r == 2) return 0;
-                }
+                if (findMultiCommentEnd()) // found eof in comment
+                    return 0;
                 continue;
 
             default: // is just a '/'
-                decrementPtr();
-                return (unsigned char)*b_ptr;
+                return 1;
                 
         }
     }
@@ -209,7 +225,7 @@ static int eatWhitespace ()
 // return 1 on error, else 0
 static int buildToken ()
 {
-    int c = eatWhitespace();
+    eatWhitespace();
     if (t.tp == ERR)
         return 1;
 
@@ -326,7 +342,6 @@ static int addToken (int* count, int* capacity)
 {
     if (*count >= *capacity)
     {
-        *capacity *= 2;
         int new_capacity = *capacity * 2;
         Token* tmp = realloc(tokens, (size_t)new_capacity * sizeof(Token));
         if (!tmp)
@@ -536,4 +551,36 @@ int stopLexer ()
     tokens = NULL;
     t_ptr = NULL;
     return 0;
+}
+
+const char *tokenTypeString(TokenType tp)
+{
+    switch (tp)
+    {
+        case KEYWORD:    return "KEYWORD";
+        case IDENTIFIER: return "IDENTIFIER";
+        case INT:        return "INT";
+        case SYMBOL:     return "SYMBOL";
+        case STRING:     return "STRING";
+        case INDENT:     return "INDENT";
+        case DEDENT:     return "DEDENT";
+        case EOFile:     return "EOFile";
+        case ERR:        return "ERR";
+        case NONE:       return "NONE";
+        default:         return "UNKNOWN";
+    }
+}
+
+const char *lexErrorString(LexError err)
+{
+    switch (err)
+    {
+        case NoLexError:    return "None";
+        case EofInComment:  return "EOFinComment";
+        case NewLineInStr:  return "NewlineinString";
+        case EofInStr:      return "EOFinString";
+        case IllegalSym:    return "IllegalSymbol";
+        case TabError:      return "TabError";
+        default:            return "UNKNOWN";
+    }
 }

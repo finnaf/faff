@@ -1,6 +1,5 @@
 // Header file for input output functions
 #include <stdio.h>
-#include <stdlib.h>
 #include "lexer.h"
 
 int main ()
@@ -13,13 +12,18 @@ int main ()
 
     int i=0;
 
-    while (tok.tp != EOFile && tok.tp != ERR)
+    while ((tok = getNextToken()).tp != EOFile && tok.tp != ERR)
     {
-        tok = getNextToken();
-        printf("%d:lexeme(%s), linenum(%d), error(%d), type(%d)\n", i, tok.lx, tok.ln, tok.ec, tok.tp);
+        printf("%-3d  lexeme: %-20s  line: %-4d  error: %-12s  type: %s\n",
+            i,
+            tok.lx,
+            tok.ln,
+            lexErrorString(tok.ec),
+            tokenTypeString(tok.tp)
+        );        
         i++;
     }
 
     printf("Done\n");
-        return EXIT_SUCCESS;
+    return 0;
 }

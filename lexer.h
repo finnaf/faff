@@ -5,16 +5,6 @@
 #define KEYWORD_COUNT 12
 #define SYMBOL_COUNT 15
 
-static const char* KEYWORDS[KEYWORD_COUNT] = {
-    "character", "integer", "floating-point", "double", "boolean",
-    "void", "if", "else", "while", "return", "true", "false"
-};
-
-static const char SYMBOLS[SYMBOL_COUNT] = {
-    '(', ')', '[', ']', ',', ':',
-    '=', '.', '+', '-', '*', '/', '<', '>'
-};
-
 typedef enum {
     KEYWORD, // reserved words
     IDENTIFIER,
@@ -48,5 +38,8 @@ int initLexer (char* file);
 Token getNextToken ();
 Token peekNextToken ();
 int stopLexer ();
+
+const char *tokenTypeString(TokenType tp);
+const char *lexErrorString(LexError err);
 
 #endif
