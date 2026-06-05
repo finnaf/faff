@@ -191,13 +191,13 @@ static LexStatus buildToken ()
     {
         t.lx[0] = '\0';
         t.tp = EOFile;
-        return LEX_ERR;
+        return LEX_OK;
     }
 
     if (*b_ptr == '\n' || *b_ptr == '\r')
     {        
         t.tp = NONE;
-        return LEX_ERR;
+        return LEX_OK;
     }
 
     int i = 0;
@@ -329,7 +329,9 @@ LexStatus eatIndent(int* count, int* capacity)
     }
 
     // blank line, EOF or comment only
-    if (*b_ptr == '\n' || *b_ptr == '\0' || *b_ptr == '/')
+    if (*b_ptr == '\n' || *b_ptr == '\0')
+        return LEX_OK;
+    if (*b_ptr == '/' && (*(b_ptr+1) == '/' || *(b_ptr+1) == '*'))
         return LEX_OK;
 
     if (tabs > 0 && spaces > 0)
@@ -444,12 +446,7 @@ LexStatus loadTokens ()
                 if (addToken(&token_count, &capacity) != LEX_OK)
                     return LEX_ERR_MALLOC;
             }
-        }
-        else if (t.tp == EOFile)
-        {
-            if (addToken(&token_count, &capacity) != LEX_OK)
-                return LEX_ERR_MALLOC;
-            break;
+            if (t.tp == EOFile) break;
         }
         else if (t.tp != NONE)
         {

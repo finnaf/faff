@@ -34,7 +34,8 @@ int main ()
             tok.ln,
             lexStatusString(tok.ec),
             tokenTypeString(tok.tp)
-        );        
+        );     
+        tok = getNextToken();   
         i++;
     }
 
