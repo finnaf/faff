@@ -6,20 +6,33 @@
 int main ()
 {
     printf("Initing\n");
-    initLexer("examples/a.faff");
+
+    int r = initLexer("examples/a.faff");
+    if (r != LEX_OK)
+    {
+        printf("Error during lexer initialisation: %s\n", lexStatusString(r));
+
+        Token tok = getNextToken();
+        printf("lexeme: %-20s  line: %-4d  error: %-12s  type: %s\n",
+            tok.lx,
+            tok.ln,
+            lexStatusString(tok.ec),
+            tokenTypeString(tok.tp)
+        );
+    }
 
     printf("Extracting tokens.\n");
     Token tok = getNextToken();
 
     int i=0;
 
-    while ((tok = getNextToken()).tp != EOFile && tok.tp != ERR)
+    while (tok.tp != EOFile && tok.tp != ERR && tok.tp != NONE)
     {
         printf("%-3d  lexeme: %-20s  line: %-4d  error: %-12s  type: %s\n",
             i,
             tok.lx,
             tok.ln,
-            lexErrorString(tok.ec),
+            lexStatusString(tok.ec),
             tokenTypeString(tok.tp)
         );        
         i++;

@@ -19,18 +19,25 @@ typedef enum {
 } TokenType;
 
 typedef enum {
-    NoLexError,
-    EofInComment,
-    NewLineInStr,
-    EofInStr,
-    IllegalSym,
-    TabError
-} LexError;
+    LEX_OK,
+    //
+    LEX_ERR_COMMENT_EOF,
+    LEX_ERR_STR_NEWLINE,
+    LEX_ERR_STR_EOF,
+    LEX_ERR_ILLEGAL_SYM,
+    LEX_ERR_TAB,
+    //
+    LEX_ERR_FILE_NOT_FOUND,
+    LEX_ERR_FILE_READ,
+    LEX_ERR_MALLOC,
+    // todo 
+    LEX_ERR
+} LexStatus;
 
 typedef struct {
     TokenType tp;
     char lx[LEX_SIZE];
-    LexError ec;
+    LexStatus ec;
     int ln;
 } Token;
 
@@ -40,6 +47,6 @@ Token peekNextToken ();
 int stopLexer ();
 
 const char *tokenTypeString(TokenType tp);
-const char *lexErrorString(LexError err);
+const char *lexStatusString(LexStatus err);
 
 #endif
