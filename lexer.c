@@ -6,7 +6,7 @@
 #include "lexer.h"
 
 const char* KEYWORDS[KEYWORD_COUNT] = {
-    "character", "integer", "floating-point", "double", "boolean",
+    "character", "integer", "floating", "double", "boolean",
     "void", "if", "else", "while", "return", "true", "false"
 };
 
@@ -15,7 +15,6 @@ const char SYMBOLS[SYMBOL_COUNT] = {
     '=', '.', '+', '-', '*', '/', '<', '>'
 };
 
-#define BUF_SIZE 2048
 #define INDENT_STACK_SIZE 256
 #define TAB_WIDTH 4
 
@@ -153,7 +152,7 @@ static LexStatus eatWhitespace ()
 {
     while (1)
     {
-        while (*b_ptr == ' ' || *b_ptr == '\t')
+        while (*b_ptr == ' ' || *b_ptr == '\t' || *b_ptr == '\r')
             b_ptr++;
 
         if (*b_ptr != '/')
@@ -195,7 +194,7 @@ static LexStatus buildToken ()
         return LEX_ERR;
     }
 
-    if (*b_ptr == '\n')
+    if (*b_ptr == '\n' || *b_ptr == '\r')
     {        
         t.tp = NONE;
         return LEX_ERR;
@@ -448,6 +447,8 @@ LexStatus loadTokens ()
         }
         else if (t.tp == EOFile)
         {
+            if (addToken(&token_count, &capacity) != LEX_OK)
+                return LEX_ERR_MALLOC;
             break;
         }
         else if (t.tp != NONE)
