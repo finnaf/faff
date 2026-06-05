@@ -1,0 +1,12 @@
+// structure of a faff file
+
+/*
+C-like, so we have functions
+they must have a return statement
+(of matching type)
+*/
+
+void foo ():
+    return;
+
+// i dont believe in global variables (for now)
