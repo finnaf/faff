@@ -7,7 +7,7 @@ int main ()
 {
     printf("Initing\n");
 
-    int r = initLexer("examples/a.faff");
+    int r = initLexer("examples/c.faff");
     if (r != LEX_OK)
     {
         printf("Error during lexer initialisation: %s\n", lexStatusString(r));
@@ -39,6 +39,13 @@ int main ()
         i++;
     }
 
-    printf("Done\n");
+    printf("Done. Final tok:\n");
+    printf("%-3d  lexeme: %-20s  line: %-4d  error: %-12s  type: %s\n",
+            i,
+            tok.lx,
+            tok.ln,
+            lexStatusString(tok.ec),
+            tokenTypeString(tok.tp)
+        ); 
     return EXIT_SUCCESS;
 }

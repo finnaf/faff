@@ -1,0 +1,4 @@
+// this is an edge case that breaks it!
+
+void foo():
+    bar

@@ -309,6 +309,9 @@ LexStatus addToken (int* count, int* capacity)
         *capacity = new_capacity;
     }
 
+    if (t.tp == DEDENT)
+        printf("Added DEDENT token\n");
+
     tokens[*count] = t;
     (*count)++;
 
@@ -436,7 +439,6 @@ LexStatus loadTokens ()
             }
             continue;
         }
-        // TODO
 
         int status = buildToken();
         if (status == LEX_OK)

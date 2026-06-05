@@ -6,7 +6,6 @@ int main ():
     // some bar
     foo(a * b)
 
-    
-
 void bar ():
-    print("This isnt")
+            print("This isnt")
+            integer waa = x
